@@ -1,14 +1,14 @@
 % Obviously this needs to point to your data (Siemens MP(2)RAGE with 3D-FatNavs)
-rawDataFile = '/home/gallicha/temp/autoTransferTemp/tempRaw/meas_MID36_mp2rage_FN600b_FatNav_06mm.dat';
+rawDataFile = '~/l/sand/retro-moco/data/meas_MID123_mp2rage_FN1000b_FatNav_1mm.dat';
 
 % And wherever you installed the Retro-MoCo-Box
-run('~/Documents/code/retroMoCoBox/addRetroMoCoBoxToPath.m')
+run('~/l/sand/retro-moco/retroMoCoBox/addRetroMoCoBoxToPath.m')
 
 % And SPM 12
-addpath('~/matlabdownloads/spm12')
+addpath('~/l/git/spm12')
 
 % And the Michigan Image Reconstruction Toolbox (MIRT) (http://web.eecs.umich.edu/~fessler/code/) for the NUFFT
-run('~/matlabdownloads/mirt/setup.m')
+run('~/l/sand/retro-moco/mirt/setup.m')
 
 % Set the resolution of the FatNavs that were used (default is 2 for 7T and 4 for 3T)
 FatNavRes_mm = 2;
