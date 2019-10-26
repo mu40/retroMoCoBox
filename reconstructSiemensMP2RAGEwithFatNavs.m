@@ -389,7 +389,7 @@ if nAve > 1
         
         thisReconPars = reconPars;
         thisReconPars.iAve = iAve;
-        timingReport{iAve} = reconstructSiemensVolume(twix_obj,thisReconPars);
+        timingReport{iAve} = reconstructSiemensVolume_mh(twix_obj,thisReconPars);
     end
     
 else
@@ -397,7 +397,7 @@ else
         disp('Error - handling of data with multiple repetitions not yet implemented...! Please contact gallichand@cardiff.ac.uk for more info')
         return
     else
-        timingReport = reconstructSiemensVolume(twix_obj,reconPars);       
+        timingReport = reconstructSiemensVolume_mh(twix_obj,reconPars);       
     end
 end
 
