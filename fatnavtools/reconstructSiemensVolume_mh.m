@@ -83,37 +83,34 @@ fprintf(fid,['<br>\n']);
 
 
 
-%%
-
-if isempty(reconPars.FatNavRes_mm)
-    manualFatNavRes = 0;
-    nominalB0 = round(twix_obj.hdr.MeasYaps.sProtConsistencyInfo.flNominalB0);
-    switch nominalB0
-        case 3
-            reconPars.FatNavRes_mm = 4;
-        case 7
-            reconPars.FatNavRes_mm = 2;
-        otherwise
-            disp(['Error - unexpected field strength of ' nominalB0 'T ...!'])
-            return
-    end
-else
-    manualFatNavRes = 1;
-end
-
-switch reconPars.FatNavRes_mm % in newer version of FatNav sequences, the resolution can be chosen at 2, 4 or 6 mm - with the FOV hard-coded in the sequence itself
-    % these choices should also match the corresponding code in processFatNavs_GRAPPA4x4.m
-    case {2,4}
-        FatNav_FOVxyz = [176 256 256]; % FatNav FOV         
-        FatNav_xyz = FatNav_FOVxyz ./ reconPars.FatNavRes_mm;
-    case 6
-        FatNav_FOVxyz = [192 264 264]; % FatNav FOV         
-        FatNav_xyz = FatNav_FOVxyz ./ reconPars.FatNavRes_mm;
-        FatNav_xyz(3) = 64; % No idea why, but the 6mm data has 64 points in the readout direction for the ACS lines instead of 44...        
-end
-
-
-
+%% mu40
+% 
+% if isempty(reconPars.FatNavRes_mm)
+%     manualFatNavRes = 0;
+%     nominalB0 = round(twix_obj.hdr.MeasYaps.sProtConsistencyInfo.flNominalB0);
+%     switch nominalB0
+%         case 3
+%             reconPars.FatNavRes_mm = 4;
+%         case 7
+%             reconPars.FatNavRes_mm = 2;
+%         otherwise
+%             disp(['Error - unexpected field strength of ' nominalB0 'T ...!'])
+%             return
+%     end
+% else
+%     manualFatNavRes = 1;
+% end
+% 
+% switch reconPars.FatNavRes_mm % in newer version of FatNav sequences, the resolution can be chosen at 2, 4 or 6 mm - with the FOV hard-coded in the sequence itself
+%     % these choices should also match the corresponding code in processFatNavs_GRAPPA4x4.m
+%     case {2,4}
+%         FatNav_FOVxyz = [176 256 256]; % FatNav FOV         
+%         FatNav_xyz = FatNav_FOVxyz ./ reconPars.FatNavRes_mm;
+%     case 6
+%         FatNav_FOVxyz = [192 264 264]; % FatNav FOV         
+%         FatNav_xyz = FatNav_FOVxyz ./ reconPars.FatNavRes_mm;
+%         FatNav_xyz(3) = 64; % No idea why, but the 6mm data has 64 points in the readout direction for the ACS lines instead of 44...        
+% end
 %%
 
 
@@ -275,13 +272,15 @@ fprintf(fid,['FOV - ' num2str(FOVxyz(1),'%.1f') 'x' num2str(FOVxyz(2),'%.1f') 'x
 fprintf(['FOV - ' num2str(FOVxyz(1),'%.1f') 'x' num2str(FOVxyz(2),'%.1f') 'x' num2str(FOVxyz(3),'%.1f') 'mm\n']);
 fprintf(fid,['Resolution: ' num2str(hostVoxDim_mm(1),'%.3f') 'x' num2str(hostVoxDim_mm(2),'%.3f') 'x' num2str(hostVoxDim_mm(3),'%.3f') 'mm<br>\n']);
 fprintf(['Resolution: ' num2str(hostVoxDim_mm(1),'%.3f') 'x' num2str(hostVoxDim_mm(2),'%.3f') 'x' num2str(hostVoxDim_mm(3),'%.3f') 'mm\n']);
-if manualFatNavRes
-    fprintf(fid,['Manually selected FatNav resolution: ' num2str(reconPars.FatNavRes_mm) ' mm<br>\n']);
-    fprintf(['Manually selected FatNav resolution: ' num2str(reconPars.FatNavRes_mm) ' mm\n']);
-else
-    fprintf(fid,['Assumed FatNav resolution (based on field strength): ' num2str(reconPars.FatNavRes_mm) ' mm<br>\n']);
-    fprintf(['Assumed FatNav resolution (based on field strength): ' num2str(reconPars.FatNavRes_mm) ' mm\n']);
-end
+%% mu40
+% if manualFatNavRes
+%     fprintf(fid,['Manually selected FatNav resolution: ' num2str(reconPars.FatNavRes_mm) ' mm<br>\n']);
+%     fprintf(['Manually selected FatNav resolution: ' num2str(reconPars.FatNavRes_mm) ' mm\n']);
+% else
+%     fprintf(fid,['Assumed FatNav resolution (based on field strength): ' num2str(reconPars.FatNavRes_mm) ' mm<br>\n']);
+%     fprintf(['Assumed FatNav resolution (based on field strength): ' num2str(reconPars.FatNavRes_mm) ' mm\n']);
+% end
+%%
 fprintf(fid,['Detected orientation: ' orientText '<br>\n']);
 fprintf(['Detected orientation: ' orientText '\n']);
 fprintf(fid,['SwapDims_xyz: [' num2str(reconPars.swapDims_xyz(1)) ' ' num2str(reconPars.swapDims_xyz(2)) ' ' num2str(reconPars.swapDims_xyz(3)) ']<br>\n']); 
@@ -336,50 +335,52 @@ else
     thisLine = squeeze(twix_obj.imageWithRefscan(1,1,:,1,1,1,1,1,1,1,1,1));
     iSamp = find(thisLine);
 end
-nFatNavs = twix_obj.FatNav.dataSize(9)/twix_obj.image.NAve;
-
-fprintf(fid,['No. of FatNavs: ' num2str(nFatNavs) '<br>\n']);
-fprintf(fid,['No. of measured lines in host sequence: ' num2str(length(iSamp)) '<br>\n']);
-fprintf(['\n\nNo. of FatNavs: ' num2str(nFatNavs) '\n']);
-fprintf(['No. of measured lines in host sequence: ' num2str(length(iSamp)) '\n']);
-
-if length(iSamp)~=nFatNavs
-    disp('Error: number of FatNavs doesn''t seem to match number of acquired lines found')
-end
-
-%% Process the FatNavs
-% - First reconstruct each FatNav, then co-register using SPM to obtain
-%   motion-estimates
-
-[ACSims, timingReport_FatNavs, fatnavdir] = processFatNavs_GRAPPA4x4(twix_obj, ... 
-            reconPars.outRoot,'FatNavRes_mm',reconPars.FatNavRes_mm, 'iAve', reconPars.iAve, 'appendString', appendString);
-
-% And put stuff into the html report
-if exist(fatnavdir,'dir') % could have just kept the motion-parameters file...
-    imdims = 2*[304 128];
-    
-    if exist([fatnavdir '/a_FatNav_ACSim_' MIDstr '.png'],'file')
-        copyfile([fatnavdir '/a_FatNav_ACSim_' MIDstr '.png'],[htmlDir '/ACSim.png']);
-        fprintf(fid,['ACS image:<br>\n']);
-        fprintf(fid,['<img src="ACSim.png" height=%s width=%s><br><br>\n'],num2str(imdims(2)),num2str(imdims(1)));
-    end
-    if exist([fatnavdir '/a_FatNav_MoCoPars_' MIDstr '.png'],'file')
-        copyfile([fatnavdir '/a_FatNav_MoCoPars_' MIDstr '.png'],[htmlDir '/motion_parameters.png']);
-        fprintf(fid,['<h4>FatNavs</h4>\n']);
-        fprintf(fid,['Estimated motion parameters:<br>\n']);
-        fprintf(fid,['<img src="motion_parameters.png"><br><br>\n']);
-    end
-    if exist([fatnavdir '/a_mov_eachFatNav.gif'],'file')
-        copyfile([fatnavdir '/a_mov_eachFatNav.gif'],[htmlDir '/mov_eachFatNav.gif'])
-        fprintf(fid,['15 example FatNavs covering complete scan:<br>\n']);
-        fprintf(fid,['<img src="mov_eachFatNav.gif" height=%s width=%s><br><br>\n'],num2str(imdims(2)),num2str(imdims(1)));
-    end
-    if exist([fatnavdir '/a_mov_spm_eachFatNav.gif'],'file')
-        copyfile([fatnavdir '/a_mov_spm_eachFatNav.gif'],[htmlDir '/mov_spm_eachFatNav.gif'])
-        fprintf(fid,['And after rigid-body registration using SPM:<br>\n']);
-        fprintf(fid,['<img src="mov_spm_eachFatNav.gif" height=%s width=%s><br><br>\n'],num2str(imdims(2)),num2str(imdims(1)));
-    end
-end
+nFatNavs = length(iSamp);
+%% mu40
+% nFatNavs = twix_obj.FatNav.dataSize(9)/twix_obj.image.NAve;
+% 
+% fprintf(fid,['No. of FatNavs: ' num2str(nFatNavs) '<br>\n']);
+% fprintf(fid,['No. of measured lines in host sequence: ' num2str(length(iSamp)) '<br>\n']);
+% fprintf(['\n\nNo. of FatNavs: ' num2str(nFatNavs) '\n']);
+% fprintf(['No. of measured lines in host sequence: ' num2str(length(iSamp)) '\n']);
+% 
+% if length(iSamp)~=nFatNavs
+%     disp('Error: number of FatNavs doesn''t seem to match number of acquired lines found')
+% end
+%%
+%% Process the FatNavs mu40
+% % - First reconstruct each FatNav, then co-register using SPM to obtain
+% %   motion-estimates
+% 
+% [ACSims, timingReport_FatNavs, fatnavdir] = processFatNavs_GRAPPA4x4(twix_obj, ... 
+%             reconPars.outRoot,'FatNavRes_mm',reconPars.FatNavRes_mm, 'iAve', reconPars.iAve, 'appendString', appendString);
+% 
+% % And put stuff into the html report
+% if exist(fatnavdir,'dir') % could have just kept the motion-parameters file...
+%     imdims = 2*[304 128];
+%     
+%     if exist([fatnavdir '/a_FatNav_ACSim_' MIDstr '.png'],'file')
+%         copyfile([fatnavdir '/a_FatNav_ACSim_' MIDstr '.png'],[htmlDir '/ACSim.png']);
+%         fprintf(fid,['ACS image:<br>\n']);
+%         fprintf(fid,['<img src="ACSim.png" height=%s width=%s><br><br>\n'],num2str(imdims(2)),num2str(imdims(1)));
+%     end
+%     if exist([fatnavdir '/a_FatNav_MoCoPars_' MIDstr '.png'],'file')
+%         copyfile([fatnavdir '/a_FatNav_MoCoPars_' MIDstr '.png'],[htmlDir '/motion_parameters.png']);
+%         fprintf(fid,['<h4>FatNavs</h4>\n']);
+%         fprintf(fid,['Estimated motion parameters:<br>\n']);
+%         fprintf(fid,['<img src="motion_parameters.png"><br><br>\n']);
+%     end
+%     if exist([fatnavdir '/a_mov_eachFatNav.gif'],'file')
+%         copyfile([fatnavdir '/a_mov_eachFatNav.gif'],[htmlDir '/mov_eachFatNav.gif'])
+%         fprintf(fid,['15 example FatNavs covering complete scan:<br>\n']);
+%         fprintf(fid,['<img src="mov_eachFatNav.gif" height=%s width=%s><br><br>\n'],num2str(imdims(2)),num2str(imdims(1)));
+%     end
+%     if exist([fatnavdir '/a_mov_spm_eachFatNav.gif'],'file')
+%         copyfile([fatnavdir '/a_mov_spm_eachFatNav.gif'],[htmlDir '/mov_spm_eachFatNav.gif'])
+%         fprintf(fid,['And after rigid-body registration using SPM:<br>\n']);
+%         fprintf(fid,['<img src="mov_spm_eachFatNav.gif" height=%s width=%s><br><br>\n'],num2str(imdims(2)),num2str(imdims(1)));
+%     end
+% end
 
 %% Do GRAPPA (if necessary) for the host sequence
 % Note that this can use rather a lot of hard-disk space, as the raw data
@@ -407,9 +408,11 @@ end
 
 %% load moco parameters and align their orientation to the host data
 
-fitResult = load([reconPars.outRoot '/motion_parameters_spm_' MIDstr appendString '.mat']);
-
-this_fitMat = fitResult.MPos_cent.mats;
+%% mu40
+% fitResult = load([reconPars.outRoot '/motion_parameters_spm_' MIDstr appendString '.mat']);^M
+% this_fitMat = fitResult.MPos_cent.mats;^M
+this_fitMat = repmat(eye(4), 1, 1, numel(iSamp));
+%%
 
 % Account for the fact that the host sequence may not have been acquired at
 % isocentre:
@@ -453,92 +456,91 @@ this_fitMat_mm(1:3,4,:) = newDisplacements;
 
 
 %% Double-check the orientation with host data against the images from the FatNavs
-% left/right matching
-% - find the coil which has the biggest asymmetry left > right, and see if it
-% is on the same side in both the FatNavs and the host data
-nc_FatNavs = size(ACSims,4);
-asymData_left = sum(reshape(abs(ACSims(1:floor(FatNav_xyz(1)/2),:,:,:)),[],nc_FatNavs),1);
-asymData_right = sum(reshape(abs(ACSims(ceil(FatNav_xyz(1)/2):FatNav_xyz(1),:,:,:)),[],nc_FatNavs),1);
-asymFactor = asymData_left./asymData_right;
-iAsymCoil = find(asymFactor==max(asymFactor),1);
-
-if useGRAPPAforHost
-    if reconPars.bGRAPPAinRAM 
-        hostExampleVolume = squeeze(mOutGRAPPA.grappaRecon_1DFFT(:,iAsymCoil,:,:,nS));
-    else
-        hostExampleVolume = zeros(hrps.');
-        for iReadSlice = 1:hrps(1) % virtual 'slices' in the readout direction            
-            tempData = load([tempNameRoots.grappaRecon_1DFFT '_' num2str(iReadSlice) '_1_' num2str(nS) '.mat']);
-            hostExampleVolume(iReadSlice,:,:) = reshape(tempData.outData(1,iAsymCoil,:,:),[1 hrps(2) hrps(3)]);
-        end
-    end   
-    hostExampleVolume = ifft1s(ifft1s(hostExampleVolume,2),3);
-else
-    hostExampleVolume = squeeze(twix_obj.image(:,iAsymCoil,:,:,1,reconPars.iAve,1,1,reconPars.iRep,nS));
-    hostExampleVolume = ifft3s(hostExampleVolume);
-end
-hostExampleVolume = permute(hostExampleVolume,permutedims);
-
-if reconPars.swapDims_xyz(1)
-    hostExampleVolume = hostExampleVolume(end:-1:1,:,:);
-end
-
-%%
-ov1 = orthoview(ACSims(:,:,:,iAsymCoil),'drawIms',0,'mip',1,'clims',[0 max(abs(ACSims(:)))]);
-ov2 = orthoview(hostExampleVolume,'drawIms',0,'mip',0,'clims',[0 max(abs(hostExampleVolume(:)))]);
-fig(figIndex)
-clf
-set(gcf,'Position',[    22   594   702   473])
-subplot1(1,2)
-subplot1(1)
-imab(ov1.im1)
-title(['xy MIP of FatNav, coil ' num2str(iAsymCoil)])
-subplot1(2)
-imab(ov2.im1)
-title(['xy centre-slice of host GRAPPA recon, coil ' num2str(iAsymCoil)])
-colormap(gray)
-export_fig([htmlDir '/orientationCheck_xy.png']);
-fprintf(fid,['Orientation check for left/right symmetry:<br>\n']);
-fprintf(fid,['<img src="orientationCheck_xy.png"><br><br>\n']);
-fprintf(fid,['(Both images above should have the brightest signal on the left of the image. If not, the orientation of the FatNavs is not correctly aligned with the host sequence)<br><br><br>\n']);
-
-
-%%
-
-if exist([fatnavdir '/eachFatNav_001.nii'],'file')
-    affMat = thisRot;
-%     affMat(1:3,4) = rotMatDisplacement_mm.'/2; % Why was this divided by
-%     two...?
-    affMat(1:3,4) = rotMatDisplacement_mm.'; 
-    affMat(4,4) = 1;
-    
-    fileTest1 = [fatnavdir '/test1.nii'];
-    fileTest2 = [fatnavdir '/test2.nii'];
-    copyfile([fatnavdir '/eachFatNav_001.nii'],fileTest1);
-    copyfile([fatnavdir '/eachFatNav_001.nii'],fileTest2);
-    
-    V = spm_vol_nifti(fileTest1);
-    V(2) = spm_vol_nifti(fileTest2);
-    newMat = V(1).mat;
-    newMat = affMat*newMat;
-    V(2).mat = newMat;
-    spm_reslice(V,struct('mask',false,'mean',false,'interp',5,'which',1,'wrap',[0 0 0],'prefix',''));
-    newFatIm = rn(fileTest2);
-    
-    nShowX = min(FatNav_xyz(1),round(0.5*FatNav_xyz(1)*FOVxyz(1)/FatNav_FOVxyz(1))*2);
-    nShowY = min(FatNav_xyz(2),round(0.5*FatNav_xyz(2)*FOVxyz(2)/FatNav_FOVxyz(2))*2);
-    nShowZ = min(FatNav_xyz(3),round(0.5*FatNav_xyz(3)*FOVxyz(3)/FatNav_FOVxyz(3))*2);
-    
-    fig(figIndex)
-    orthoview(newFatIm([1:nShowX]-nShowX/2+FatNav_xyz(1)/2,[1:nShowY]-nShowY/2+FatNav_xyz(2)/2,[1:nShowZ]-nShowZ/2+FatNav_xyz(3)/2),'useNewFig',0);
-    set(gcf,'Position',[    50   720   950  340])
-    subplot1(2)
-    title({'First FatNav realigned to coordinate system of host sequence','xz'})
-    export_fig([htmlDir '/orientationCheck_FatVolume.png'])
-    fprintf(fid,['Orientation check for host sequence slice rotation and positioning:<br>\n']);
-    fprintf(fid,['<img src="orientationCheck_FatVolume.png"><br><br>\n']);
-    fprintf(fid,['(The fat volume shown above should approximately correspond to the FOV chosen for the host sequence)<br><br><br>\n']);
-end
+% mu40
+% % left/right matching
+% % - find the coil which has the biggest asymmetry left > right, and see if it
+% % is on the same side in both the FatNavs and the host data
+% nc_FatNavs = size(ACSims,4);
+% asymData_left = sum(reshape(abs(ACSims(1:floor(FatNav_xyz(1)/2),:,:,:)),[],nc_FatNavs),1);
+% asymData_right = sum(reshape(abs(ACSims(ceil(FatNav_xyz(1)/2):FatNav_xyz(1),:,:,:)),[],nc_FatNavs),1);
+% asymFactor = asymData_left./asymData_right;
+% iAsymCoil = find(asymFactor==max(asymFactor),1);
+% 
+% if useGRAPPAforHost
+%     if reconPars.bGRAPPAinRAM 
+%         hostExampleVolume = squeeze(mOutGRAPPA.grappaRecon_1DFFT(:,iAsymCoil,:,:,nS));
+%     else
+%         hostExampleVolume = zeros(hrps.');
+%         for iReadSlice = 1:hrps(1) % virtual 'slices' in the readout direction            
+%             tempData = load([tempNameRoots.grappaRecon_1DFFT '_' num2str(iReadSlice) '_1_' num2str(nS) '.mat']);
+%             hostExampleVolume(iReadSlice,:,:) = reshape(tempData.outData(1,iAsymCoil,:,:),[1 hrps(2) hrps(3)]);
+%         end
+%     end   
+%     hostExampleVolume = ifft1s(ifft1s(hostExampleVolume,2),3);
+% else
+%     hostExampleVolume = squeeze(twix_obj.image(:,iAsymCoil,:,:,1,reconPars.iAve,1,1,reconPars.iRep,nS));
+%     hostExampleVolume = ifft3s(hostExampleVolume);
+% end
+% hostExampleVolume = permute(hostExampleVolume,permutedims);
+% 
+% if reconPars.swapDims_xyz(1)
+%     hostExampleVolume = hostExampleVolume(end:-1:1,:,:);
+% end
+% 
+% %%
+% ov1 = orthoview(ACSims(:,:,:,iAsymCoil),'drawIms',0,'mip',1,'clims',[0 max(abs(ACSims(:)))]);
+% ov2 = orthoview(hostExampleVolume,'drawIms',0,'mip',0,'clims',[0 max(abs(hostExampleVolume(:)))]);
+% fig(figIndex)
+% clf
+% set(gcf,'Position',[    22   594   702   473])
+% subplot1(1,2)
+% subplot1(1)
+% imab(ov1.im1)
+% title(['xy MIP of FatNav, coil ' num2str(iAsymCoil)])
+% subplot1(2)
+% imab(ov2.im1)
+% title(['xy centre-slice of host GRAPPA recon, coil ' num2str(iAsymCoil)])
+% colormap(gray)
+% export_fig([htmlDir '/orientationCheck_xy.png']);
+% fprintf(fid,['Orientation check for left/right symmetry:<br>\n']);
+% fprintf(fid,['<img src="orientationCheck_xy.png"><br><br>\n']);
+% fprintf(fid,['(Both images above should have the brightest signal on the left of the image. If not, the orientation of the FatNavs is not correctly aligned with the host sequence)<br><br><br>\n']);
+%% mu40
+% 
+% if exist([fatnavdir '/eachFatNav_001.nii'],'file')
+%     affMat = thisRot;
+% %     affMat(1:3,4) = rotMatDisplacement_mm.'/2; % Why was this divided by
+% %     two...?
+%     affMat(1:3,4) = rotMatDisplacement_mm.'; 
+%     affMat(4,4) = 1;
+%     
+%     fileTest1 = [fatnavdir '/test1.nii'];
+%     fileTest2 = [fatnavdir '/test2.nii'];
+%     copyfile([fatnavdir '/eachFatNav_001.nii'],fileTest1);
+%     copyfile([fatnavdir '/eachFatNav_001.nii'],fileTest2);
+%     
+%     V = spm_vol_nifti(fileTest1);
+%     V(2) = spm_vol_nifti(fileTest2);
+%     newMat = V(1).mat;
+%     newMat = affMat*newMat;
+%     V(2).mat = newMat;
+%     spm_reslice(V,struct('mask',false,'mean',false,'interp',5,'which',1,'wrap',[0 0 0],'prefix',''));
+%     newFatIm = rn(fileTest2);
+%     
+%     nShowX = min(FatNav_xyz(1),round(0.5*FatNav_xyz(1)*FOVxyz(1)/FatNav_FOVxyz(1))*2);
+%     nShowY = min(FatNav_xyz(2),round(0.5*FatNav_xyz(2)*FOVxyz(2)/FatNav_FOVxyz(2))*2);
+%     nShowZ = min(FatNav_xyz(3),round(0.5*FatNav_xyz(3)*FOVxyz(3)/FatNav_FOVxyz(3))*2);
+%     
+%     fig(figIndex)
+%     orthoview(newFatIm([1:nShowX]-nShowX/2+FatNav_xyz(1)/2,[1:nShowY]-nShowY/2+FatNav_xyz(2)/2,[1:nShowZ]-nShowZ/2+FatNav_xyz(3)/2),'useNewFig',0);
+%     set(gcf,'Position',[    50   720   950  340])
+%     subplot1(2)
+%     title({'First FatNav realigned to coordinate system of host sequence','xz'})
+%     export_fig([htmlDir '/orientationCheck_FatVolume.png'])
+%     fprintf(fid,['Orientation check for host sequence slice rotation and positioning:<br>\n']);
+%     fprintf(fid,['<img src="orientationCheck_FatVolume.png"><br><br>\n']);
+%     fprintf(fid,['(The fat volume shown above should approximately correspond to the FOV chosen for the host sequence)<br><br><br>\n']);
+% end
 
 %% FatNavs are not acquired concurrently with the MP2RAGE data, so in the 
 % case of 'brittle' motion it may be especially beneficial to average
@@ -1246,9 +1248,10 @@ else
 end
 
 fprintf(fid,['<h4>Total reconstruction time: ' num2str(totalTime_hrs) ' hours, ' num2str(totalTime_mins) ' mins</h4>\n']);
-fprintf(fid,['<strong>Calculate GRAPPA weights for FatNavs: </strong>' num2str(round(timingReport_FatNavs.calculateGRAPPAweights)) ' seconds.<br>\n']);
-fprintf(fid,['<strong>Reconstruct FatNavs: </strong>' num2str(nFatNavs) 'x ' num2str(round(mean(timingReport_FatNavs.eachFatNav))) ' seconds. Total time (possibly parallelized!): = ' num2str(round(timingReport_FatNavs.allFatNavs)) ' seconds. <br>\n']);
-fprintf(fid,['<strong>Align FatNavs using SPM: </strong>' num2str(round(timingReport_FatNavs.SPMalignment)) ' seconds.<br>\n']);
+% mu40
+% fprintf(fid,['<strong>Calculate GRAPPA weights for FatNavs: </strong>' num2str(round(timingReport_FatNavs.calculateGRAPPAweights)) ' seconds.<br>\n']);
+% fprintf(fid,['<strong>Reconstruct FatNavs: </strong>' num2str(nFatNavs) 'x ' num2str(round(mean(timingReport_FatNavs.eachFatNav))) ' seconds. Total time (possibly parallelized!): = ' num2str(round(timingReport_FatNavs.allFatNavs)) ' seconds. <br>\n']);
+% fprintf(fid,['<strong>Align FatNavs using SPM: </strong>' num2str(round(timingReport_FatNavs.SPMalignment)) ' seconds.<br>\n']);
 if reconPars.bGRAPPAinRAM
     fprintf(fid,'<em>GRAPPA recon of host performed in RAM (i.e. faster)...</em><br>\n');
 else
@@ -1301,13 +1304,14 @@ if reconPars.bZipNIFTIs
     delete([outDir '/*.nii']);
 end
 
-if ~reconPars.bKeepFatNavs
-    rmdir(fatnavdir,'s')
-end
+% mu40
+% if ~reconPars.bKeepFatNavs
+%     rmdir(fatnavdir,'s')
+% end
     
 timingReport.totalTime_hrs = totalTime_hrs;
 timingReport.totalTime_mins = totalTime_mins;
-timingReport.timingReport_FatNavs = timingReport_FatNavs;
+% timingReport.timingReport_FatNavs = timingReport_FatNavs;
 timingReport.timingReport_hostRecon = timingReport_hostRecon;
 timingReport.avgTimeApplyMocoPerVolume = avgTimeApplyMocoPerVolume;
 timingReport.timingReport_totalTimeApplyMoco = timingReport_totalTimeApplyMoco;
