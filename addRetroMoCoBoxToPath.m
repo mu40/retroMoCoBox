@@ -7,9 +7,8 @@ retroMoCoPath = which('addRetroMoCoBoxToPath.m');
 addpath(retroMoCoPath);
 addpath([retroMoCoPath '/export_fig']);
 addpath([retroMoCoPath '/fatnavtools']);
+addpath([retroMoCoPath '/vnavtools']);
 addpath([retroMoCoPath '/generaltools']);
 addpath([retroMoCoPath '/images']);
 addpath([retroMoCoPath '/niftitools']);
-if exist([retroMoCoPath '/mapVBVD_20160905'],'dir')
-    addpath([retroMoCoPath '/mapVBVD_20160905']);
-end
+addpath([retroMoCoPath '/mapVBVD_20160905']);

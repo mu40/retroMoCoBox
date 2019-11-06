@@ -1,5 +1,5 @@
-function reconstructSiemensMP2RAGEwithFatNavs(rawDataFile,varargin)
-% function reconstructSiemensMP2RAGEwithFatNavs(rawDataFile,varargin)
+function reconstructSiemensMP2RAGEwithvNavs(rawDataFile,varargin)
+% function reconstructSiemensMP2RAGEwithvNavs(rawDataFile,varargin)
 % 
 % Dependencies:
 %%%%%%%%%%%%%%%
@@ -91,6 +91,15 @@ function reconstructSiemensMP2RAGEwithFatNavs(rawDataFile,varargin)
 %                            confident enough to make this the default
 %                            processing.
 %
+%       'vNavRes_mm' - the spatial resolution of the acquired FatNavs, 
+%                        specified in mm. The current implementation of the
+%                        pulse sequence does not allow this information to
+%                        be stored in the raw data, so this must be entered
+%                        here manually - or use the default of 2 mm.
+%                        Whatever you specify here, the code does still
+%                        assume that the acceleration for the FatNavs was
+%                        4x4 and that the FOV was 176x256x256mm.
+%
 %       'swapDims_xyz' - 3-component row-vector to determine whether to
 %                        reverse each of x, y and z directions. Default is
 %                        [0 0 1] which seems to work for a lot of parameter
@@ -99,6 +108,10 @@ function reconstructSiemensMP2RAGEwithFatNavs(rawDataFile,varargin)
 %
 %       'bZipNIFTIs' - Use '1' to apply gzip at the end to all the NIFTI
 %                     files (default), otherwise just leave them uncompressed.
+%
+%       'bKeepFatNavs' - Use '1' to keep all the reconstructed FatNavs,
+%                       otherwise delete that folder when finished
+%                       (default).
 %
 %       'bKeepPatientInfo' - Use '1' to keep sensitive info from raw data header  
 %                           in HTML output (default). Use '0' to anomyize completely
@@ -233,7 +246,7 @@ function reconstructSiemensMP2RAGEwithFatNavs(rawDataFile,varargin)
 %           no apparent reason
 %
 %   0.6.4 - -- Sep 2017
-%         - Automatically set FatNavRes_mm based on field strength (7T - 2mm, 3T - 4mm)         
+%         - Automatically set vNavRes_mm based on field strength (7T - 2mm, 3T - 4mm)         
 %
 %   0.7.0 - Feb 2018
 %         - Create sub-function reconstructSiemensVolume.m so that multiple
@@ -271,11 +284,11 @@ end
 %%
 
 [reconPars.outRoot, reconPars.tempRoot, reconPars.bLinParSwap, reconPars.bGRAPPAinRAM, reconPars.bKeepGRAPPArecon, reconPars.bKeepReconInRAM, reconPars.bFullParforRecon,...
-    reconPars.coilCombineMethod, reconPars.swapDims_xyz, reconPars.bZipNIFTIs,reconPars.bKeepPatientInfo,...
-    reconPars.bKeepComplexImageData, reconPars.motMatFile, reconPars.doReverseCorr, reconPars.alignMotToCen, reconPars.doAverageMot] = process_options(varargin,...
+    reconPars.coilCombineMethod, reconPars.vNavRes_mm, reconPars.swapDims_xyz, reconPars.bZipNIFTIs, reconPars.bKeepFatNavs,reconPars.bKeepPatientInfo,...
+    reconPars.bKeepComplexImageData, reconPars.vNavDicomDir, reconPars.alignToStartOrEnd] = process_options(varargin,...
     'outRoot',[],'tempRoot',[],'bLinParSwap',0,'bGRAPPAinRAM',0,'bKeepGRAPPArecon',0,'bKeepReconInRAM',0,...
-    'bFullParforRecon',0,'coilCombineMethod','default','swapDims_xyz',[0 0 1],'bZipNIFTIs',1,'bKeepPatientInfo',1,...
-    'bKeepComplexImageData',0,'motMatFile',[],'doReverseCorr',1,'alignMotToCen',0,'doAverageMot',0);
+    'bFullParforRecon',0,'coilCombineMethod','default','vNavRes_mm',[],'swapDims_xyz',[0 0 1],'bZipNIFTIs',1,'bKeepFatNavs',0,'bKeepPatientInfo',1,...
+    'bKeepComplexImageData',0, 'vNavDicomDir',0, 'alignToStartOrEnd',0);
 
 
 %%
@@ -284,6 +297,7 @@ if reconPars.bFullParforRecon && ~reconPars.bKeepReconInRAM
     disp('Error - you asked for the full parfor option (bFullParforRecon), but not to do the recon in RAM (bKeepReconInRAM)')
     return
 end
+
 
 %% Disply pie chart of current breakdown of reconstruction time
 
@@ -324,12 +338,39 @@ if length(twix_obj)>1 % on VE (and presumably VD as well) the raw data typically
     twix_obj = twix_obj{2};
 end
 
+if ~isfield(twix_obj,'RTfeedback')
+    disp('Error, no vNavs found in raw data file!')
+    twix_obj % this displays the fields of the twix_obj that are present for comparison/debugging
+    return
+end
 
-% if ~isfield(twix_obj,'FatNav')
-%     disp('Error, no FatNavs found in raw data file!')
-%     twix_obj % this displays the fields of the twix_obj that are present for comparison/debugging
-%     return
-% end
+%%
+
+
+if isempty(reconPars.vNavRes_mm)
+    reconPars.manualvNavRes = 0;
+    nominalB0 = round(twix_obj.hdr.MeasYaps.sProtConsistencyInfo.flNominalB0);
+    switch nominalB0
+        case 3
+            reconPars.vNavRes_mm = 4;
+        case 7
+            reconPars.vNavRes_mm = 2;
+        otherwise
+            disp(['Error - unexpected field strength of ' nominalB0 'T ...!'])
+            return
+    end
+else
+    reconPars.manualvNavRes = 1;
+end
+
+switch reconPars.vNavRes_mm % in newer version of FatNav sequences, the resolution can be chosen at 2, 4 or 6 mm - with the FOV hard-coded in the sequence itself
+    % these choices should also match the corresponding code in processFatNavs_GRAPPA4x4.m
+    case 8
+        reconPars.vNav_FOVxyz = [256 256 256]; % vNav FOV         
+        reconPars.vNav_xyz = reconPars.vNav_FOVxyz ./ reconPars.vNavRes_mm;
+
+end
+
 
 %% Run the reconstruction on each volume in the raw data
 
@@ -346,7 +387,7 @@ if nAve > 1
         
         thisReconPars = reconPars;
         thisReconPars.iAve = iAve;
-        timingReport{iAve} = reconstructSiemensVolume_mh(twix_obj,thisReconPars);
+        timingReport{iAve} = reconstructSiemensVolumevNav(twix_obj,thisReconPars);
     end
     
 else
@@ -354,7 +395,7 @@ else
         disp('Error - handling of data with multiple repetitions not yet implemented...! Please contact gallichand@cardiff.ac.uk for more info')
         return
     else
-        timingReport = reconstructSiemensVolume_mh(twix_obj,reconPars);       
+        timingReport = reconstructSiemensVolumevNav(twix_obj,reconPars);       
     end
 end
 
@@ -370,7 +411,7 @@ else
 end
 
 fprintf('*************************************************************\n')
-fprintf('***** reconstructSiemensMP2RAGEwithFatNavs.m completed! *****\n')
+fprintf('***** reconstructSiemensMP2RAGEwithvNavs.m completed! *****\n')
 fprintf('*************************************************************\n')
 fprintf(['Total reconstruction time: ' num2str(totalTime_hrs) ' hours, ' num2str(totalTime_mins) ' mins\n']);
 
