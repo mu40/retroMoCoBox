@@ -14,7 +14,7 @@ retroMocoBoxVersion = reconPars.retroMocoBoxVersion; % put this into the HTML fo
 
 if ~isfield(reconPars,'iAve')
     reconPars.iAve = 1;
-end
+    endo
 if ~isfield(reconPars,'iRep')
     reconPars.iRep = 1;
 end

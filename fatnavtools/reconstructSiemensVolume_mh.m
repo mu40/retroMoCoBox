@@ -251,12 +251,23 @@ kspaceCentre_xyz = kspaceCentre_rps(permutedims);
 
 nc = twix_obj.image.NCha;
 nS = twix_obj.image.NSet; % for MP2RAGE this will be 2...
+nE = twix_obj.image.NEco; % 4 for multi-echo ...
+if nS>1 && nE>4
+    error('multi-echo MP2RAGE - can''t handle this yet')
+elseif nS==1 && nE==4
+    disp('one Set and four Echoes - multi-echo scan')
+    warning('override nS setting !!!')
+    nS=nE;
+end
 
 
 % and put stuff into html report and the screen
 if nS == 2
     fprintf(fid,['<h4>Host MP2RAGE ']);
     fprintf(['\n\n\nHost MP2RAGE ']);
+elseif nS == 4
+    fprintf(fid,['<h4>Host multi-echo MPRAGE ']);
+    fprintf(['\n\n\nHost multi-echo MPRAGE ']);
 else
     fprintf(fid,['<h4>Host MPRAGE ']);
     fprintf(['\n\n\nHost MPRAGE ']);
@@ -322,7 +333,7 @@ if reconPars.bLinParSwap % MP2RAGE sequence currently doesn't allow 2D GRAPPA, s
     iSamp = 1:hxyz(alignDim);           
 else
     alignDim = permutedims_toXYZ(2);    
-    thisLine = squeeze(twix_obj.imageWithRefscan(1,1,:,1,1,1,1,1,1,1,1,1));
+    thisLine = squeeze(twix_obj.imageWithRefscan(1,1,:,1,1,1,1,1,1,1,1,1,1,1,1,1,1));
     iSamp = find(thisLine);
 end
 numvnav = twix_obj.RTfeedback.NRep / twix_obj.image.NAve;
@@ -354,7 +365,7 @@ export_fig(fullfile(htmlDir, 'mot_org.png'));
 fprintf(fid, 'Motion parameters from file:<br>\n');
 fprintf(fid, '<img src="mot_org.png"><br><br>\n');
 
-if ~reconPars.doReverseCorr % I.e. apply retrospective correction.
+if ~reconPars.doReverseCorr % I.e. apply retrospective correctpion.
     fprintf(fid, 'Inverting motion estimates.<br>\n');
     for i = 1:nummot
         mot(:,:,i) = inv(mot(:,:,i));
@@ -426,8 +437,12 @@ save([reconPars.outRoot '/malte.mat'],'mot');
 
 if Arps(2) > 1
     useGRAPPAforHost = 1;
+    counterStruct = struct('iAve',reconPars.iAve,'iRep',reconPars.iRep,...
+        'replaceReacqs',reconPars.replaceReacqs,...
+        'RData_lines_IMAGE',reconPars.RData_lines_IMAGE,'RData_reacq_to_use_IMAGE',reconPars.RData_reacq_to_use_IMAGE,...
+        'RData_lines_REFSCAN',reconPars.RData_lines_REFSCAN,'RData_reacq_to_use_REFSCAN',reconPars.RData_reacq_to_use_REFSCAN);
     if reconPars.bGRAPPAinRAM        
-        [grappaRecon_1DFFT, mOutGRAPPA] = performHostGRAPPArecon_RAMonly(twix_obj,struct('iAve',reconPars.iAve,'iRep',reconPars.iRep));
+        [grappaRecon_1DFFT, mOutGRAPPA] = performHostGRAPPArecon_RAMonly(twix_obj,counterStruct);
         mOutGRAPPA.grappaRecon_1DFFT = grappaRecon_1DFFT; clear grappaRecon_1DFFT;
         timingReport_hostRecon = mOutGRAPPA.timingReport;
     else
@@ -435,7 +450,7 @@ if Arps(2) > 1
 %         performHostGRAPPArecon(twix_obj,tempDir); % the original low-RAM
 %         alternative code needs verifying as the output ends up corrupted
 %         (in at least some cases)
-        [timingReport_hostRecon, tempNameRoots] = performHostGRAPPArecon_toDisk(twix_obj,tempDir,struct('iAve',reconPars.iAve,'iRep',reconPars.iRep));    
+        [timingReport_hostRecon, tempNameRoots] = performHostGRAPPArecon_toDisk(twix_obj,tempDir,counterStruct); 
     end
 else
     useGRAPPAforHost = 0;
@@ -708,10 +723,19 @@ else % for Parfor to work you can't use the mOut structure trick (which could ei
     
     if useGRAPPAforHost % separate the two sets of MP2RAGE to allow parfor
         data_set1 = mOutGRAPPA.grappaRecon_1DFFT(:,iC_keep,:,:,1);
-        if nS>1
+        if nS==2
             data_set2 = mOutGRAPPA.grappaRecon_1DFFT(:,iC_keep,:,:,2);
         else
             data_set2 = zeros(1,nc_keep); % try to keep later parfor's happy if there is no set 2
+        end
+        if nS==4
+            data_set2 = mOutGRAPPA.grappaRecon_1DFFT(:,iC_keep,:,:,2);
+            data_set3 = mOutGRAPPA.grappaRecon_1DFFT(:,iC_keep,:,:,3);
+            data_set4 = mOutGRAPPA.grappaRecon_1DFFT(:,iC_keep,:,:,4);
+        else
+            data_set2 = zeros(1,nc_keep); % try to keep later parfor's happy if there is no set 2
+            data_set3 = data_set2;
+            data_set4 = data_set2;
         end
     else
         data_set1 = squeeze(twix_obj.image(:,iC_keep,:,:,1,reconPars.iAve,1,1,reconPars.iRep,1));
@@ -925,6 +949,10 @@ else % the much faster version with much hungrier RAM requirements:
                     thisData = squeeze(data_set1(:,iC,:,:));
                 case 2
                     thisData = squeeze(data_set2(:,iC,:,:));
+                case 3
+                    thisData = squeeze(data_set3(:,iC,:,:));
+                case 4
+                    thisData = squeeze(data_set4(:,iC,:,:));
             end
             if useGRAPPAforHost
                 thisData = fft1s(thisData,1); % put into full 3D k-space
@@ -1057,14 +1085,44 @@ else % the much faster version with much hungrier RAM requirements:
     all_uniImage = all_uniImage./all_refImage;
     all_uniImage_corrected = all_uniImage_corrected./all_refImage_corrected;
     
-    sn(int16(4095*all_ims(:,:,:,1)/max(reshape(all_ims,[],1))),[outDir '/INV1'],hostVoxDim_mm)
-    sn(int16(4095*all_ims_corrected(:,:,:,1)/max(reshape(all_ims_corrected,[],1))),[outDir '/INV1_corrected'],hostVoxDim_mm)
-    
-    if nS>1
-        sn( int16(4095*(all_uniImage+0.5)) ,[outDir '/UNI'],hostVoxDim_mm)
-        sn( int16(4095*(all_uniImage_corrected+0.5)),[outDir '/UNI_corrected'],hostVoxDim_mm)
-        sn(int16(4095*all_ims(:,:,:,2)/max(reshape(all_ims,[],1))),[outDir '/INV2'],hostVoxDim_mm)
-        sn(int16(4095*all_ims_corrected(:,:,:,2)/max(reshape(all_ims_corrected,[],1))),[outDir '/INV2_corrected'],hostVoxDim_mm)
+    if nE>1
+        %%
+        IMSTR='ECO';
+        max_val = max(reshape(all_ims,[],1)); 
+        max_val_corrected = max(reshape(all_ims_corrected,[],1));
+        disp(['max_val = ' num2str(max_val) '; max_val_corrected = ' num2str(max_val_corrected)])
+        for ii = 1:size(all_ims,4)
+            disp(['saving ' IMSTR ' ' num2str(ii)])            
+            sn(int16(4095*all_ims(:,:,:,ii)/max_val),[outDir '/' IMSTR num2str(ii)],hostVoxDim_mm)
+            sn(int16(4095*all_ims_corrected(:,:,:,ii)/max_val_corrected),[outDir '/' IMSTR num2str(ii) '_corrected'],hostVoxDim_mm)            
+        end
+        test_FS = getenv('FREESURFER_HOME');
+        if ~isempty(test_FS)
+            disp('freesurfer has been sourced... generate RMS images')           
+            [stat,res] = unix(sprintf('mri_average -noconform -rms %s/ECO?.nii %s/RMS.nii',outDir,outDir));
+            disp(res)
+            if stat~=0
+                warning('problem with FreeSurfer RMS creation...')
+            end
+            [stat,res] = unix(sprintf('mri_average -noconform -rms %s/ECO?_corrected.nii %s/RMS_corrected.nii',outDir,outDir));
+            disp(res)
+            if stat~=0
+                warning('problem with FreeSurfer RMS creation...')
+            end
+        end
+                    
+        %%
+    else
+        IMSTR='INV';
+        sn(int16(4095*all_ims(:,:,:,1)/max(reshape(all_ims,[],1))),[outDir '/' IMSTR '1'],hostVoxDim_mm)
+        sn(int16(4095*all_ims_corrected(:,:,:,1)/max(reshape(all_ims_corrected,[],1))),[outDir '/' IMSTR '1_corrected'],hostVoxDim_mm)
+        
+        if nS==2
+            sn( int16(4095*(all_uniImage+0.5)) ,[outDir '/UNI'],hostVoxDim_mm)
+            sn( int16(4095*(all_uniImage_corrected+0.5)),[outDir '/UNI_corrected'],hostVoxDim_mm)
+            sn(int16(4095*all_ims(:,:,:,2)/max(reshape(all_ims,[],1))),[outDir '/' IMSTR '2'],hostVoxDim_mm)
+            sn(int16(4095*all_ims_corrected(:,:,:,2)/max(reshape(all_ims_corrected,[],1))),[outDir '/' IMSTR '2_corrected'],hostVoxDim_mm)
+        end
     end
     
     mOut.all_ims = all_ims;

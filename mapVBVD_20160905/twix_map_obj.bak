@@ -73,7 +73,6 @@ properties(GetAccess='public', SetAccess='protected')
     NIdd  % mdh information
     NIde  % mdh information
     NAcq  % simple counter
-    NReacq % RobF: add support for saving reacquisitions
 
     % mdh information
     Lin
@@ -90,7 +89,6 @@ properties(GetAccess='public', SetAccess='protected')
     Idc
     Idd
     Ide
-    Reacq % RobF: add support for saving reacquisitions
 
     centerCol
     centerLin
@@ -223,16 +221,6 @@ methods
         this.Idc        = sLC(:,12).';
         this.Idd        = sLC(:,13).';
         this.Ide        = sLC(:,14).';
-        % RobF: add support for saving reacquisitions
-        tmp = ones(size(mdh.aushIceProgramPara(:,8)));  
-        if ~any(mdh.aushIceProgramPara(:,5)==2) % parent has index 1, vNav has index 2
-        reacqInds = find(mdh.aushIceProgramPara(:,8) - mdh.aushIceProgramPara(:,7)); % find where chunk counter and ID are different
-        if size(reacqInds,1)>0
-            tmp(reacqInds) = mdh.aushIceProgramPara(reacqInds,8) - mdh.aushIceProgramPara(reacqInds(1),8) + 2;       
-        end
-        end
-        this.Reacq      = double( tmp ).';
-        % RobF: end
 
         this.centerCol   = double( mdh.ushKSpaceCentreColumn ).' + 1;
         this.centerLin   = double( mdh.ushKSpaceCentreLineNo ).' + 1;
@@ -297,7 +285,6 @@ methods
         fields = { 'NCol', 'NCha',                                                  ...
                    'Lin', 'Par', 'Sli', 'Ave', 'Phs', 'Eco', 'Rep',                 ...
                    'Set', 'Seg', 'Ida', 'Idb', 'Idc', 'Idd', 'Ide',                 ...
-                   'Reacq', ...
                    'centerCol'  ,   'centerLin',   'centerPar',           'cutOff', ...
                    'coilSelect' , 'ROoffcenter', 'timeSinceRF',      'IsReflected', ...
                    'scancounter',   'timestamp',     'pmutime', 'IsRawDataCorrect', ...
@@ -327,8 +314,6 @@ methods
         this.NIdc = max(this.Idc);
         this.NIdd = max(this.Idd);
         this.NIde = max(this.Ide);
-        this.NReacq = max(this.Reacq);
-	
 
         % ok, let us assume for now that all NCol and NCha entries are
         % the same for all mdhs:
@@ -336,7 +321,7 @@ methods
         this.NCha = this.NCha(1);
 
         this.dataDims = {'Col','Cha','Lin','Par','Sli','Ave','Phs',...
-            'Eco','Rep','Set','Seg','Ida','Idb','Idc','Idd','Ide', 'Reacq'};
+            'Eco','Rep','Set','Seg','Ida','Idb','Idc','Idd','Ide'};
 
         if strcmp(this.dataType,'refscan')
             %pehses: check for lines with 'negative' line/partition numbers
@@ -375,8 +360,7 @@ methods
         this.fullSize = [ this.NCol this.NCha NLinAlloc NParAlloc...
                           this.NSli this.NAve this.NPhs this.NEco...
                           this.NRep this.NSet this.NSeg this.NIda...
-                          this.NIdb this.NIdc this.NIdd this.NIde...%];%...
-			  this.NReacq]; % RobF: add support for saving reacquisitions
+                          this.NIdb this.NIdc this.NIdd this.NIde ];
 
         nByte = this.NCha*(this.freadInfo.szChannelHeader+8*this.NCol);
 
@@ -430,8 +414,7 @@ methods
 
         % calculate ixToTarg for possibly smaller, shifted + segmented
         % target matrix:
-        cIx = ones(15, numel(ixToRaw), 'single'); % RobF: add support for saving reacquisitions
-%         cIx = ones(14, numel(ixToRaw), 'single');
+        cIx = ones(14, numel(ixToRaw), 'single');
         if ~this.flagAverageDim(3)
             cIx( 1,:) = this.Lin(ixToRaw) - this.skipLin;
         end
@@ -474,9 +457,6 @@ methods
         if ~this.flagAverageDim(16)
             cIx(14,:) = this.Ide(ixToRaw);
         end
-        if ~this.flagAverageDim(17)
-            cIx(15,:) = this.Reacq(ixToRaw); % RobF: add support for saving reacquisitions
-        end
 
         % make sure that indices fit inside selection range
         for k=3:numel(selRange)
@@ -488,7 +468,7 @@ methods
 
         ixToTarg = this.sub2ind_double(selRangeSz(3:end),cIx(1,:),cIx(2,:),cIx(3,:),...
             cIx(4,:),cIx(5,:),cIx(6,:),cIx(7,:),cIx(8,:),cIx(9,:),...
-            cIx(10,:),cIx(11,:),cIx(12,:),cIx(13,:),cIx(14,:),cIx(15,:));
+            cIx(10,:),cIx(11,:),cIx(12,:),cIx(13,:),cIx(14,:));
 
         mem = this.memPos(ixToRaw);
         % sort mem for quicker access, sort cIxToTarg/Raw accordingly
@@ -755,7 +735,7 @@ methods
         this.arg.averageSets         = false;
         this.arg.ignoreSeg           = false;
         this.arg.doRawDataCorrect    = false;
-        this.flagAverageDim          = false(1,17); % RobF: add support for saving reacquisitions
+        this.flagAverageDim          = false(1,16);
         
         if strcmp(this.dataType,'image') || strcmp(this.dataType,'phasecor') || strcmp(this.dataType,'phasestab')
             this.arg.skipToFirstLine = false;
@@ -772,7 +752,7 @@ methods
         this.flagRemoveOS            = false;
         this.flagRampSampRegrid      = false;
         this.flagDoRawDataCorrect    = false;
-        this.flagAverageDim          = false(1,17); % RobF: add support for saving reacquisitions
+        this.flagAverageDim          = false(1,16);
         
         if strcmp(this.dataType,'image') || strcmp(this.dataType,'phasecor') || strcmp(this.dataType,'phasestab')
             this.arg.skipToFirstLine = false;
@@ -1041,7 +1021,7 @@ methods (Access='protected')
         ixToTarget = this.sub2ind_double(this.fullSize(3:end),...
             LinIx, ParIx, this.Sli, this.Ave, this.Phs, this.Eco,...
             this.Rep, this.Set, this.Seg, this.Ida, this.Idb,...
-            this.Idc, this.Idd, this.Ide, this.Reacq); % RobF: add support for saving reacquisitions
+            this.Idc, this.Idd, this.Ide);
 
         % now calc. inverse index (page table: virtual to physical addresses)
         % indices of lines that are not measured are zero

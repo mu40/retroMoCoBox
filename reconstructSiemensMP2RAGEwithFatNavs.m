@@ -272,10 +272,11 @@ end
 
 [reconPars.outRoot, reconPars.tempRoot, reconPars.bLinParSwap, reconPars.bGRAPPAinRAM, reconPars.bKeepGRAPPArecon, reconPars.bKeepReconInRAM, reconPars.bFullParforRecon,...
     reconPars.coilCombineMethod, reconPars.swapDims_xyz, reconPars.bZipNIFTIs,reconPars.bKeepPatientInfo,...
-    reconPars.bKeepComplexImageData, reconPars.motMatFile, reconPars.doReverseCorr, reconPars.alignMotToCen, reconPars.doAverageMot] = process_options(varargin,...
+    reconPars.bKeepComplexImageData, reconPars.motMatFile, reconPars.doReverseCorr, reconPars.alignMotToCen, reconPars.doAverageMot,...
+    reconPars.vNavDicomDir, reconPars.replaceReacqs] = process_options(varargin,...
     'outRoot',[],'tempRoot',[],'bLinParSwap',0,'bGRAPPAinRAM',0,'bKeepGRAPPArecon',0,'bKeepReconInRAM',0,...
     'bFullParforRecon',0,'coilCombineMethod','default','swapDims_xyz',[0 0 1],'bZipNIFTIs',1,'bKeepPatientInfo',1,...
-    'bKeepComplexImageData',0,'motMatFile',[],'doReverseCorr',1,'alignMotToCen',0,'doAverageMot',0);
+    'bKeepComplexImageData',0,'motMatFile',[],'doReverseCorr',1,'alignMotToCen',0,'doAverageMot',0,'vNavDicomDir', 0, 'replaceReacqs', 0);
 
 
 %%
@@ -296,7 +297,7 @@ end
 % t_SPMrealign = 61/60;
 % t_GRAPPArecon = 6;
 % t_NUFFT = 8;
-% t_other = t_TotalTime - t_ParseRaw - t_reconFatNavs - t_SPMrealign - t_NUFFT;
+% t_other = t_TotalTime - t_ParsreRaw - t_reconFatNavs - t_SPMrealign - t_NUFFT;
 % 
 % figure(1001)
 % set(gcf,'Position',[    88   415   588   506])
@@ -324,12 +325,154 @@ if length(twix_obj)>1 % on VE (and presumably VD as well) the raw data typically
     twix_obj = twix_obj{2};
 end
 
+if ~isfield(twix_obj,'RTfeedback')
+    disp('Error, no vNavs found in raw data file!')
+    twix_obj % this displays the fields of the twix_obj that are present for comparison/debugging
+    return
+end
 
-% if ~isfield(twix_obj,'FatNav')
-%     disp('Error, no FatNavs found in raw data file!')
-%     twix_obj % this displays the fields of the twix_obj that are present for comparison/debugging
-%     return
-% end
+%% show the number of reacqs for each data type
+f =fields(twix_obj); 
+for ff=2:length(f)
+    disp([f{ff} ' has ' num2str(twix_obj.(f{ff}).NReacq) ' reacqs'])
+end
+% in refscan NReacq is wrong it is counting non-refscan chunks that happen
+% before the refscan 
+% - look at sort(chunkIDs(firstReacqInd:end)) below
+%% do a quick check that the meas.dat and vNav dicom were on the same day...
+frameRef = split(twix_obj.hdr.Config.FrameOfReference,'.');
+measDate = frameRef{11}(1:8);
+dicomDirList = dir(reconPars.vNavDicomDir);
+testDicom = dicomDirList(3).name;
+testDicom_split = split(testDicom,'.');
+disp('')
+if contains(testDicom,measDate)    
+    disp('')
+    disp(['k-space data (' measDate ') and vNav DICOMs (' testDicom ') were acquired on the same day! Proceed!'])
+elseif testDicom_split{11}(1:5)=='30000'
+    disp(testDicom)
+    disp(measDate)
+    warning('looks like a retro-recon ... date check not performed')
+else
+    disp(testDicom)
+    disp(measDate)
+    error('k-space data and vNav DICOMs should be acquired on the same day...')
+end
+disp('')
+%% call the python script to read the motion from the vNav DICOM headers
+% script will save a file "rms_scores_vnav.h5" which will be read below
+[datadir, ~, ~] = fileparts(reconPars.rawDataFile);
+if reconPars.vNavDicomDir==0
+    error('need the path to the directory containing the vNav DICOM files')
+else
+    str = sprintf('python /autofs/space/vault_020/users/rfrost/moco/parse_vNav_Motion/vnav/parse_vNav_Motion.py --input %s/* --tr 2.5  --radius 64 --rms- --output-mats-path %s',...
+        reconPars.vNavDicomDir,datadir);
+    disp(str)
+    [stat,res] = unix(str);
+    disp(res)
+    if stat~=0
+        error('reading vNav motion params failed!')
+    end
+end
+%% use the vNav motion to decide which data to replace with reacqs
+% get the scores output from parse_vNav_Motion.py
+rms_scores = h5read([datadir '/rms_scores_vnav.h5'],'/rmsscores');
+rms_scores = [-1 rms_scores']; % first chunk does not have a score...
+%% find lines to replace with reacquisitions
+% have to analyse reacqs in twix_obj.imageWithRefscan because the chunkIDs
+% correspond to these in the acquisition with integrated GRAPPA refscan
+% need to know which reacqs to replace in:
+% - twix_obj.refscan
+% - twix_obj.image
+
+if twix_obj.imageWithRefscan.NReacq > 1
+    % find the indices of when the chunk counter changes
+    new_counter_inds = [1 find(diff(twix_obj.imageWithRefscan.iceParam(8,:)))+1];
+    
+    % extract the list of chunk IDs and chunk Counters:
+    chunkIDs=twix_obj.imageWithRefscan.iceParam(7,new_counter_inds);
+    chunkCounters=twix_obj.imageWithRefscan.iceParam(8,new_counter_inds);
+    % look at which Lines were acquired - this should match the data found in
+    % the reacqs
+    chunkLines = twix_obj.imageWithRefscan.Lin(new_counter_inds); % e.g. 2,4,6 ..
+    chunkLines = chunkLines - 1; % seems that a -1 is necessary..? data must be placed
+    % by mapVBVD in the index preceding these Lin numbers ?
+    
+    lastScanBeforeReacq = find(chunkIDs==max(chunkIDs));
+    firstReacqInd = lastScanBeforeReacq + 2; % the chunkID=0 is always first reacq, so need to take the one after
+    
+    % intialize a list of scores to be updated with reacq scores as we loop
+    % through
+    rms_scores_current = rms_scores(1:lastScanBeforeReacq);
+    reacqs_to_use_for_replacement = -1*ones(1,twix_obj.imageWithRefscan.NLin);
+    
+    reacq = 0; clear reacq_lines
+    for ind = firstReacqInd:length(chunkIDs)
+        reacq = reacq + 1;
+        
+        ID = chunkIDs(ind);
+        LINE = chunkLines(ind);
+        SCOREreacq = rms_scores(ind);
+        SCOREorig = rms_scores_current(ID + 1); % list position is ID+1, IDs start from 0
+        
+        fprintf('reacq %d: chunk ID = %d, reacq score = %.2f, original score %.2f\n'...
+            ,reacq,ID,SCOREreacq,SCOREorig)
+        
+        thisLine = twix_obj.imageWithRefscan(1,1,:,1,1,1,1,1,1,1,1,1,1,1,1,1,reacq+2);
+        line = find(abs(squeeze(thisLine)));
+        
+        if line~=LINE, error('different ways of finding lines should be the same'), end
+        reacq_lines(reacq) = line;
+        
+        if SCOREreacq<SCOREorig
+            fprintf('replace line %d with twix_obj reacq index = %d\n\n',line,reacq+2)
+            rms_scores_current(ID + 1) = SCOREreacq;
+            % set the line position in replacement array with reacq number from
+            % twix_obj.imageWithRefscan         %
+            % *** important that for replacement imageWithRefscan is used ***
+            % the same line was reacquired at least once, the best one will be
+            % stored
+            reacqs_to_use_for_replacement(line) = reacq+2;
+        end
+        
+    end
+    lines_to_replace = find(reacqs_to_use_for_replacement~=-1);
+    reacq_to_use = reacqs_to_use_for_replacement(lines_to_replace);
+    
+    % find the lines in image and in refscan
+    new_counter_inds = [1 find(diff(twix_obj.image.Lin))+1];
+    LINESimage = twix_obj.image.Lin(new_counter_inds) - 1; % need a -1 to match the lines found in reacq data
+    
+    new_counter_inds = [1 find(diff(twix_obj.refscan.Lin))+1];
+    LINESrefscan = twix_obj.refscan.Lin(new_counter_inds) - 1;
+    
+    new_counter_inds = [1 find(diff(twix_obj.imageWithRefscan.Lin))+1];
+    LINESimageWithRefscan = twix_obj.imageWithRefscan.Lin(new_counter_inds) - 1;
+    
+    % split the lines into image and refscan (for GRAPPA recon and calib parts)
+    IND = ismember(lines_to_replace,LINESimage);
+    lines_IMAGE = lines_to_replace(IND);
+    reacq_to_use_IMAGE = reacq_to_use(IND);
+    
+    disp('image lines to replace and reacqs to use:')
+    disp([lines_IMAGE;reacq_to_use_IMAGE])
+    
+    % refscan lines to replace and reacqs to use
+    IND = ismember(lines_to_replace,LINESrefscan);
+    lines_REFSCAN = lines_to_replace(IND);
+    reacq_to_use_REFSCAN = reacq_to_use(IND);
+    
+    disp('refscan lines to replace and reacqs to use:')
+    disp([lines_REFSCAN;reacq_to_use_REFSCAN])
+    
+    reconPars.RData_lines_to_replace    = lines_to_replace;
+    reconPars.RData_reacq_to_use        = reacq_to_use;
+    reconPars.RData_lines_IMAGE         = lines_IMAGE;
+    reconPars.RData_reacq_to_use_IMAGE  = reacq_to_use_IMAGE;
+    reconPars.RData_lines_REFSCAN       = lines_REFSCAN;
+    reconPars.RData_reacq_to_use_REFSCAN= reacq_to_use_REFSCAN;
+    
+end
 
 %% Run the reconstruction on each volume in the raw data
 

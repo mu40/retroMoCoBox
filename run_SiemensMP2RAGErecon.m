@@ -60,15 +60,19 @@ addpath('~/l/git/spm12')
 run('~/l/sand/retro-moco/mirt/setup.m')
 hcp_dir = '/autofs/space/sand_001/users/mu40/retro-moco/data_hcp';
 
-% rawDataFile = fullfile(hcp_dir, 'meas_MID01868_FID23788_T1w_MPR_vNav_4e.dat'); % running
+rawDataFile = fullfile(hcp_dir, 'meas_MID01868_FID23788_T1w_MPR_vNav_4e.dat'); % running
+vNavDicomDir = fullfile(hcp_dir, 'dcm_MID01868');
 % motMatFile = fullfile(hcp_dir, 'mot_MID01868_pace.mat');
 % motMatFile = fullfile(hcp_dir, 'mot_MID01868_imf1.mat');
+motMatFile = fullfile(hcp_dir, 'mot_MID01868_imf005.mat');
 % motMatFile = fullfile(hcp_dir, 'mot_MID01868_imf12.mat');
 
-rawDataFile = fullfile(hcp_dir, 'meas_MID01876_FID23796_T1w_MPR_vNav_4e.dat');
+% rawDataFile = fullfile(hcp_dir, 'meas_MID01876_FID23796_T1w_MPR_vNav_4e.dat');
+% vNavDicomDir = fullfile(hcp_dir, 'dcm_MID01876');
 % motMatFile = fullfile(hcp_dir, 'mot_MID01876_pace.mat');
 % motMatFile = fullfile(hcp_dir, 'mot_MID01876_imf1.mat');
-motMatFile = fullfile(hcp_dir, 'mot_MID01876_imf12.mat');
+% motMatFile = fullfile(hcp_dir, 'mot_MID01876_imf005.mat');
+% motMatFile = fullfile(hcp_dir, 'mot_MID01876_imf12.mat');
 
 
 doReverseCorr = 1; % Zero means correct retrospectively.
@@ -78,6 +82,8 @@ reconstructSiemensMP2RAGEwithFatNavs(rawDataFile,...
     'doReverseCorr',doReverseCorr,...
     'alignMotToCen',0,...
     'doAverageMot',0,...
+    'vNavDicomDir', vNavDicomDir,...
+    'replaceReacqs', 0,...
     'bGRAPPAinRAM',1,...
     'bKeepReconInRAM',1,...
     'bFullParforRecon',1);
@@ -94,9 +100,10 @@ run('~/l/sand/retro-moco/mirt/setup.m')
 
 % Correction applied to: none.
 rawDataFile = '/autofs/space/sand_001/users/mu40/retro-moco/data_jaw2/meas_MID02618_FID44559_ABCD_T1w_MPR_vNavPMCoff_neither_jawOpen.dat';
-% motMatFile = '/autofs/space/sand_001/users/mu40/retro-moco/data_jaw2/mot_MID02618_pace.mat';
+vNavDicomDir = '/autofs/space/sand_001/users/mu40/retro-moco/data_jaw2/dcm_MID02618';
+% motMatFile = '/autofs/space/sand_001/users/mu40/retro-moco/data_jawll2/mot_MID02618_pace.mat';
 % motMatFile = '/autofs/space/sand_001/users/mu40/retro-moco/data_jaw2/mot_MID02618_flirt_bd2_up4/4d_fsl.mat';
-motMatFile = '/autofs/space/sand_001/users/mu40/retro-moco/data_jaw2/mot_MID02618_flirt_up4/4d_fsl.mat';
+motMatFile = '/autofs/space/sand_001/users/mu40/retro-moco/data_jaw2/mot_MIeD02618_flirt_up4/4d_fsl.mat';
 
 
 doReverseCorr = 0; % Zero means correct retrospectively.
@@ -105,6 +112,8 @@ reconstructSiemensMP2RAGEwithFatNavs(rawDataFile,...
     'doReverseCorr',doReverseCorr,...
     'alignMotToCen',0,... % Alignment to first frame had lower entropy.
     'doAverageMot',0,...
+    'vNavDicomDir', vNavDicomDir,...
+    'replaceReacqs', 0,...
     'bGRAPPAinRAM',1,...
     'bKeepReconInRAM',1,...
     'bFullParforRecon',1);

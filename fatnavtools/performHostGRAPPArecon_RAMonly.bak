@@ -97,42 +97,11 @@ nACS2 = min(nACSmeas2,nACSmax);
 centerPar1 = twix_obj.image.centerPar(1);
 centerLin1 = twix_obj.image.centerLin(1);
 
-REACQ = 1;
 tic
 disp('..............')
 disp('... Loading the raw data file into RAM and doing a 1D-FFT')
-allData = twix_obj.image(:,:,:,:,:,counterStruct.iAve,:,:,counterStruct.iRep,:,1,1,1,1,1,1,REACQ);
+allData = twix_obj.image(:,:,:,:,:,counterStruct.iAve,:,:,counterStruct.iRep,:);
 timingReport.FFTperSlice = toc;
-% replacement of data with reacqs - must get reacqs from
-% **imageWithRefscan** where the reacq counters correspond to the acquisition
-if counterStruct.replaceReacqs
-    disp('***************')
-    fprintf('replacing %d lines with reacqs in the accelerated data\n',length(counterStruct.RData_lines_IMAGE))
-    disp(['lines: ' num2str(counterStruct.RData_lines_IMAGE)])
-    disp(['reacq: ' num2str(counterStruct.RData_reacq_to_use_IMAGE)])
-    disp('***************')
-    % line indices are different by 1 in image and imageWithRefscan...
-    for rr=1:length(counterStruct.RData_lines_IMAGE)
-        
-        line = counterStruct.RData_lines_IMAGE(rr);
-        reacq = counterStruct.RData_reacq_to_use_IMAGE(rr);
-        
-        lineData = twix_obj.imageWithRefscan(:,:,line,:,:,counterStruct.iAve,:,:,counterStruct.iRep...
-            ,:,1,1,1,1,1,1,reacq);
-        if ~any(lineData(:))
-            disp([rr line reacq])
-            error('reacqdata appears to be zeros - must have wrong index')
-        end
-        
-        allData(:,:,line + 1,:,:,:,:,:) = ... % note +1 offset...
-            lineData(:,:,:,:,:,:,:,:);
-    end
-else
-    disp('***************')
-    disp('not using any reacqs for the accelerated data')
-    disp('***************')
-end
-% end: reacq replacement
 allData = ifft1s(allData,1);
 
 disp('Done')
@@ -141,43 +110,8 @@ disp('..............')
 
 %% Now do GRAPPA on each of those slices
 
-% imageWithRefscan and refscan line indices seem to match...
-new_counter_inds = [1 find(diff(twix_obj.refscan.Lin))+1];
-LINESrefscan = twix_obj.refscan.Lin(new_counter_inds) - 1;
-ACSstart = LINESrefscan(1);
 
-ACSdata = twix_obj.refscan(:,:,:,:,:,counterStruct.iAve,:,:,counterStruct.iRep,:,1,1,1,1,1,1,REACQ);
-% replacement of ACS data with reacqs - must use **imageWithRefscan**
-if counterStruct.replaceReacqs
-    disp('***************')
-    fprintf('replacing %d lines with reacqs in the ACS data\n',length(counterStruct.RData_lines_REFSCAN))
-    disp(['lines: ' num2str(counterStruct.RData_lines_REFSCAN)])
-    disp(['reacq: ' num2str(counterStruct.RData_reacq_to_use_REFSCAN)])
-    disp('***************')    
-    for rr=1:length(counterStruct.RData_lines_REFSCAN)
-        
-        line = counterStruct.RData_lines_REFSCAN(rr);
-        ACSline = line - ACSstart + 1;
-        reacq = counterStruct.RData_reacq_to_use_REFSCAN(rr);
-        
-        lineData = twix_obj.imageWithRefscan(:,:,line,:,:,counterStruct.iAve,:,:,counterStruct.iRep...
-            ,:,1,1,1,1,1,1,reacq);
-        if ~any(lineData(:))
-            disp([rr line reacq])
-            error('reacqdata appears to be zeros - must have wrong index')
-        end
-        
-        %     subplot(211);imshow(abs(squeeze(ACSdata(:,1,ACSline,:,1,1,1,1))),[0 1e-5])
-        %     subplot(212);imshow(abs(squeeze(lineData(:,1,:,:,1,1,1,1))),[0 1e-5])
-        ACSdata(:,:,ACSline,:,:,:,:,:) = ...
-            lineData(:,:,:,:,:,:,:,:);
-    end
-else
-    disp('***************')
-    disp('not using any reacqs for the ACS data')
-    disp('***************')
-end
-% end: reacq replacement
+ACSdata = twix_obj.refscan(:,:,:,:,:,counterStruct.iAve,:,:,counterStruct.iRep,:);
 ACSdata = ifft1s(ACSdata);
 
 %%% Define GRAPPA kernel
